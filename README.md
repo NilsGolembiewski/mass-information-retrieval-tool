@@ -2,6 +2,10 @@
 
 A Python tool that retrieves structured information for a list of items from a CSV file using the Google Gemini API based on a YAML configuration file.
 
+### Information Source (Gemini API with Google Search)
+
+This tool utilizes the Google Gemini API to gather information. Crucially, it enables the **Google Search tool** within the API call. This allows the Gemini model to potentially perform live web searches via Google Search to supplement its internal knowledge base and provide more current or specific information when answering prompts. The quality and recency of the information depend on both the Gemini model's capabilities and the search results it accesses.
+
 ## Prerequisites
 
 *   Python (version specified in `pyproject.toml`, e.g., ^3.9)
