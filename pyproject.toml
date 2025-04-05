@@ -20,6 +20,9 @@ joblib = "^1.4.2" # Added for parallel processing
 pytest = "^7.0"
 black = "^23.3"
 
+[tool.poetry.scripts]
+mass-retrieve-info = "mass_information_retrieval_tool.main:main"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -83,13 +83,19 @@ prompt_template: |
 
 ## Usage
 
-Run the tool from the project root directory using Poetry:
+After installing dependencies with `poetry install`, you can run the tool using the script entry point:
+
+```bash
+poetry run mass-retrieve-info --config config.yaml
+```
+
+Alternatively, you can run it directly as a module:
 
 ```bash
 poetry run python -m mass_information_retrieval_tool.main --config config.yaml
 ```
 
-*   Replace `config.yaml` with the actual path to your configuration file if it's different or located elsewhere.
+*   Replace `config.yaml` with the actual path to your configuration file if it's different or located elsewhere (the default is `config.yaml` in the current directory).
 *   The script will read the input CSV, query Gemini for each item in the specified `key_column`, attempt to parse and validate the results according to the `schema`, and save the enriched data to the `output_csv`.
 *   Progress and any errors will be logged to the console.
 
@@ -152,9 +158,9 @@ This repository includes an `example_data` directory containing sample files to 
     ```
 
 3.  **Run the Example:**
-    Execute the tool using the example configuration:
+    Execute the tool using the example configuration (using the script entry point):
     ```bash
-    poetry run python -m mass_information_retrieval_tool.main --config example_data/config.yaml
+    poetry run mass-retrieve-info --config example_data/config.yaml
     ```
     *(Ensure your `GEMINI_API_KEY` is set in the `.env` file as described in the Setup section).*
 
