@@ -1,0 +1,7 @@
+CompanyName,Region,ContactPerson,number_of_employees,annual_revenue,headquarters_location,year_founded,industry,website
+Apple Inc.,North America,,164000,391035000000.0,"Cupertino, California, United States",1976,Consumer Electronics,https://www.apple.com/
+Microsoft Corporation,North America,,228000,245122000000.0,"Redmond, Washington",1975,Information technology,microsoft.com
+Alphabet Inc.,North America,,183323,350018000000.0,"Mountain View, California, United States",2015,Conglomerate,https://abc.xyz
+"Amazon.com, Inc.",North America,,1556000,637959000000.0,"Seattle, Washington and Arlington, Virginia, U.S.",1994,"Conglomerate (E-commerce, Cloud Computing, Online Advertising, Digital Streaming, Artificial Intelligence, Retail)",https://www.amazon.com
+"Meta Platforms, Inc.",North America,,74067,164500000000.0,"Menlo Park, California",2004,Social media,meta.com
+"Cisco Systems, Inc.",North America,,90400,53803000000.0,"San Jose, California, U.S.",1984,"Networking hardware, Networking software, Communication Equipment, IT Services",cisco.com

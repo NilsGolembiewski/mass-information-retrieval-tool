@@ -1,0 +1,37 @@
+# --- Configuration for Mass Information Retrieval Tool ---
+
+# Input CSV file path
+input_csv: "example_data/input.csv" # IMPORTANT: Update this path to your actual input file
+
+# Output CSV file path (will be created)
+output_csv: "example_data/output.csv" # IMPORTANT: Update this path if needed
+
+# Name of the column in the input CSV containing the items to look up
+key_column: "CompanyName" # IMPORTANT: Update this to your actual column name
+
+# Google Gemini API configuration
+gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
+api_key_env_var: "GEMINI_API_KEY" # Name of the environment variable holding the API key
+
+# Parallel processing configuration
+max_parallel_requests: 5 # Maximum number of concurrent API requests (adjust as needed)
+
+# Schema definition for the information to retrieve
+# Keys are the desired output column names, values are the expected data types (str, int, float, bool)
+schema:
+  number_of_employees: int
+  annual_revenue: float
+  headquarters_location: str
+  year_founded: int
+  industry: str
+  website: str
+  # Add more fields as needed
+
+# Prompt template for querying Gemini
+# Use {item} as a placeholder for the value from the key_column
+# Use {schema_json} as a placeholder for the desired JSON output structure
+prompt_template: |
+  For the item "{item}", find the following information and provide it strictly as a JSON object matching this structure:
+  {schema_json}
+
+  If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.

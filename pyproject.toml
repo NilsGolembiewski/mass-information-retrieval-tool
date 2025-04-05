@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "mass-information-retrieval-tool"
+version = "0.1.0"
+description = "A tool for retrieving information for a list of items using an AI."
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+openai = "^1.0"  # For ChatGPT
+google-genai = "^1.9.0" # Use the new unified SDK
+pandas = "^2.2.3"
+python-dotenv = "^1.1.0"
+pyyaml = "^6.0.2"
+joblib = "^1.4.2" # Added for parallel processing
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0"
+black = "^23.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
