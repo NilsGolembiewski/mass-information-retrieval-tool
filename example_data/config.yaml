@@ -6,11 +6,12 @@ input_csv: "example_data/input.csv" # IMPORTANT: Update this path to your actual
 # Output CSV file path (will be created)
 output_csv: "example_data/output.csv" # IMPORTANT: Update this path if needed
 
-# Name of the column in the input CSV containing the items to look up
-key_column: "CompanyName" # IMPORTANT: Update this to your actual column name
+# List of column names in the input CSV containing the key information
+key_columns: ["CompanyName"] # IMPORTANT: Update this list with your actual column names
 
 # Google Gemini API configuration
-gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
+# gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
+gemini_model: "gemini-2.0-flash" # Using 2.5 Pro Preview model
 api_key_env_var: "GEMINI_API_KEY" # Name of the environment variable holding the API key
 
 # Parallel processing configuration
@@ -28,10 +29,13 @@ schema:
   # Add more fields as needed
 
 # Prompt template for querying Gemini
-# Use {item} as a placeholder for the value from the key_column
+# Use {key_values_json} as a placeholder for the JSON object containing the key-value pairs from the key_columns
 # Use {schema_json} as a placeholder for the desired JSON output structure
 prompt_template: |
-  For the item "{item}", find the following information and provide it strictly as a JSON object matching this structure:
+  For the entity described by the following key information:
+  {key_values_json}
+
+  Find the following details and provide them strictly as a JSON object matching this structure:
   {schema_json}
 
   If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.

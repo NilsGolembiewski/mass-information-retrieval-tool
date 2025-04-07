@@ -48,14 +48,14 @@ The tool's behavior is controlled by a `config.yaml` file (default location is t
 
 *   `input_csv`: (Required) Path to the input CSV file containing the items to look up.
 *   `output_csv`: (Required) Path where the enriched output CSV file will be saved. The directory will be created if it doesn't exist.
-*   `key_column`: (Required) The name of the column in the `input_csv` that contains the items (e.g., company names, product IDs) for which information should be retrieved.
+*   `key_columns`: (Required) A list of column names in the `input_csv` that together identify the items (e.g., `["Company Name", "Product ID"]`) for which information should be retrieved.
 *   `gemini_model`: (Required) The specific Google Gemini model to use (e.g., `gemini-1.5-flash`).
 *   `api_key_env_var`: (Required) The name of the environment variable that holds your Google Gemini API key (defined in your `.env` file).
 *   `schema`: (Required) A dictionary defining the desired output structure.
     *   Keys: The names of the new columns to be added to the output CSV.
     *   Values: The expected data type for each column (`str`, `int`, `float`, `bool`). The tool will attempt to convert the data received from Gemini to these types.
 *   `prompt_template`: (Required) A template string for the prompt sent to Gemini.
-    *   Use `{item}` as a placeholder for the value from the `key_column`.
+    *   Use `{key_values_json}` as a placeholder for a JSON object containing the key-value pairs from the `key_columns` for the current row.
     *   Use `{schema_json}` as a placeholder for a JSON representation of the desired output structure (generated automatically based on the `schema`).
 
 **Example `config.yaml`:**
@@ -69,8 +69,8 @@ input_csv: "data/companies.csv" # IMPORTANT: Update this path
 # Output CSV file path (will be created)
 output_csv: "data/companies_enriched.csv" # IMPORTANT: Update this path
 
-# Name of the column in the input CSV containing the items to look up
-key_column: "Company Name" # IMPORTANT: Update this
+# List of column names in the input CSV containing the key information
+key_columns: ["Company Name"] # IMPORTANT: Update this list
 
 # Google Gemini API configuration
 gemini_model: "gemini-1.5-flash"
@@ -85,7 +85,10 @@ schema:
 
 # Prompt template for querying Gemini
 prompt_template: |
-  For the company "{item}", find the following information and provide it strictly as a JSON object matching this structure:
+  For the entity described by the following key information:
+  {key_values_json}
+
+  Find the following details and provide them strictly as a JSON object matching this structure:
   {schema_json}
 
   If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
@@ -106,7 +109,7 @@ poetry run python -m mass_information_retrieval_tool.main --config config.yaml
 ```
 
 *   Replace `config.yaml` with the actual path to your configuration file if it's different or located elsewhere (the default is `config.yaml` in the current directory).
-*   The script will read the input CSV, query Gemini for each item in the specified `key_column`, attempt to parse and validate the results according to the `schema`, and save the enriched data to the `output_csv`.
+*   The script will read the input CSV, query Gemini for each item identified by the combination of values in the specified `key_columns`, attempt to parse and validate the results according to the `schema`, and save the enriched data to the `output_csv`.
 *   Progress and any errors will be logged to the console.
 
 ## Example Usage (Using `example_data`)
@@ -121,14 +124,14 @@ This repository includes an `example_data` directory containing sample files to 
     # Input CSV file path
     input_csv: "example_data/input.csv" # IMPORTANT: Update this path to your actual input file
 
-    # Output CSV file path (will be created)
-    output_csv: "example_data/output.csv" # IMPORTANT: Update this path if needed
+# Output CSV file path (will be created)
+output_csv: "example_data/output.csv" # IMPORTANT: Update this path if needed
 
-    # Name of the column in the input CSV containing the items to look up
-    key_column: "CompanyName" # IMPORTANT: Update this to your actual column name
+# List of column names in the input CSV containing the key information
+key_columns: ["CompanyName"] # IMPORTANT: Update this list with your actual column names
 
-    # Google Gemini API configuration
-    gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
+# Google Gemini API configuration
+gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
     api_key_env_var: "GEMINI_API_KEY" # Name of the environment variable holding the API key
 
     # Parallel processing configuration
@@ -145,14 +148,17 @@ This repository includes an `example_data` directory containing sample files to 
       website: str
       # Add more fields as needed
 
-    # Prompt template for querying Gemini
-    # Use {item} as a placeholder for the value from the key_column
-    # Use {schema_json} as a placeholder for the desired JSON output structure
-    prompt_template: |
-      For the item "{item}", find the following information and provide it strictly as a JSON object matching this structure:
-      {schema_json}
+# Prompt template for querying Gemini
+# Use {key_values_json} as a placeholder for the JSON object containing the key-value pairs from the key_columns
+# Use {schema_json} as a placeholder for the desired JSON output structure
+prompt_template: |
+  For the entity described by the following key information:
+  {key_values_json}
 
-      If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
+  Find the following details and provide them strictly as a JSON object matching this structure:
+  {schema_json}
+
+  If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
     ```
 
 2.  **Input Data (`example_data/input.csv`):**

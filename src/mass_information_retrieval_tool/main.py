@@ -41,7 +41,7 @@ def main():
     except (ValueError, KeyError) as e:
         # Catch config validation errors or missing API key errors
         logging.error(f"Configuration or Setup Error: {e}")
-        sys.exit(1)
+        raise
     except Exception as e:
         # Catch any other unexpected errors during processing
         logging.error(f"An unexpected error occurred: {e}", exc_info=True) # Include traceback

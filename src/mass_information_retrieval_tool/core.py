@@ -34,10 +34,17 @@ def load_config(config_path: str) -> Dict[str, Any]:
         raise
 
     # Basic validation
-    required_keys = ['input_csv', 'output_csv', 'key_column', 'gemini_model', 'api_key_env_var', 'schema', 'prompt_template']
+    required_keys = ['input_csv', 'output_csv', 'key_columns', 'gemini_model', 'api_key_env_var', 'schema', 'prompt_template'] # Changed key_column to key_columns
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Missing required key in configuration: {key}")
+
+    # Validate key_columns type
+    if not isinstance(config['key_columns'], list) or not all(isinstance(col, str) for col in config['key_columns']):
+        raise ValueError("Configuration 'key_columns' must be a list of strings.")
+    if not config['key_columns']:
+        raise ValueError("Configuration 'key_columns' cannot be empty.")
+
 
     # Validate schema type
     if not isinstance(config['schema'], dict):
@@ -149,28 +156,29 @@ def validate_and_convert(data: Any, target_type_str: str) -> Any:
 # --- Helper function for parallel processing ---
 def process_row_with_gemini(
     index: int,
-    item: Any,
+    key_values: Dict[str, Any], # Changed 'item' to 'key_values' dictionary
     client: genai.Client,
     model_name: str,
     prompt_template: str,
     schema_json_str: str,
-    schema: Dict[str, str],
-    key_column: str
+    schema: Dict[str, str]
+    # Removed key_column parameter as it's implicitly handled by key_values
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
-    """Processes a single row: calls Gemini API and validates the result."""
-    if pd.isna(item):
-        logging.warning(f"Skipping row {index + 1} due to missing value in key column '{key_column}'.")
-        return index, None # Return index and None data
+    """Processes a single row based on key values: calls Gemini API and validates the result."""
+    # Check if any key value is NaN/None - already handled in process_csv before calling this
+    # key_values_str = ', '.join(f"{k}='{v}'" for k, v in key_values.items()) # Create string representation for logging
+    key_values_json_str = json.dumps(key_values) # Create JSON string for prompt
+    logging.info(f"Processing row {index + 1}: Key Values = {key_values_json_str}") # Log JSON string
 
-    logging.info(f"Processing row {index + 1}: Item = '{item}'")
-    prompt = prompt_template.format(item=item, schema_json=schema_json_str)
+    # Format prompt with JSON strings for key values and schema
+    prompt = prompt_template.format(key_values_json=key_values_json_str, schema_json=schema_json_str)
 
     # Call Gemini API using the client
     retrieved_data = call_gemini_api(client, model_name, prompt)
 
     processed_row_data = {}
-    if retrieved_data:
-        logging.debug(f"Raw data received for '{item}': {retrieved_data}")
+    if retrieved_data and isinstance(retrieved_data, dict):
+        logging.debug(f"Raw data received for row {index + 1}: {retrieved_data}") # Updated log message
         # Populate dictionary with validated data for this row
         for col_name, type_str in schema.items():
             value = retrieved_data.get(col_name) # Use .get() for safe access
@@ -178,7 +186,7 @@ def process_row_with_gemini(
             processed_row_data[col_name] = validated_value
         return index, processed_row_data
     else:
-        logging.warning(f"No valid data retrieved from Gemini for item: '{item}'")
+        logging.warning(f"No valid data retrieved from Gemini for row {index + 1} (Keys: {key_values_json_str})") # Updated log message
         # Return index and None data if API call failed or returned invalid data
         return index, None
 
@@ -195,7 +203,7 @@ def process_csv(config: Dict[str, Any]) -> None:
     # 2. Load paths and settings from config
     input_path = config['input_csv']
     output_path = config['output_csv']
-    key_column = config['key_column']
+    key_columns = config['key_columns'] # Changed key_column to key_columns
     schema = config['schema']
     model_name = config['gemini_model']
     prompt_template = config['prompt_template']
@@ -211,8 +219,10 @@ def process_csv(config: Dict[str, Any]) -> None:
         logging.error(f"Error reading CSV file {input_path}: {e}")
         return
 
-    if key_column not in df.columns:
-        logging.error(f"Key column '{key_column}' not found in {input_path}")
+    # Validate that all key columns exist
+    missing_cols = [col for col in key_columns if col not in df.columns]
+    if missing_cols:
+        logging.error(f"Key columns not found in {input_path}: {', '.join(missing_cols)}")
         return
 
     # Prepare schema JSON for the prompt
@@ -228,17 +238,26 @@ def process_csv(config: Dict[str, Any]) -> None:
     # --- Parallel Processing using joblib ---
     logging.info(f"Starting parallel processing with {max_parallel_requests} workers.")
 
-    # Prepare inputs for each job
-    job_inputs = [
-        (index, row[key_column]) for index, row in df.iterrows()
-    ]
+    # Prepare inputs for each job - create key-value dictionaries
+    # Rows with missing key values will still be processed, passing None/NaN to the API call context
+    job_inputs = []
+    for index, row in df.iterrows():
+        key_values = {col: row[col] for col in key_columns}
+        # Log a warning if any key value is missing, but still include the row
+        if any(pd.isna(val) for val in key_values.values()):
+             logging.warning(f"Row {index + 1} has missing value(s) in key columns: {key_values}. Proceeding with available keys.")
+        job_inputs.append((index, key_values))
 
-    # Run jobs in parallel
+
+    # Run jobs in parallel for all inputs
     results = Parallel(n_jobs=max_parallel_requests, backend="threading")(
         delayed(process_row_with_gemini)(
-            index, item, client, model_name, prompt_template, schema_json_str, schema, key_column
-        ) for index, item in job_inputs
+            index, key_vals, client, model_name, prompt_template, schema_json_str, schema
+        ) for index, key_vals in job_inputs # Process all inputs directly
     )
+
+    # --- Update DataFrame with results ---
+    # Results list directly corresponds to the input rows now
 
     # --- Update DataFrame with results ---
     logging.info("Updating DataFrame with processed results.")
