@@ -13,6 +13,16 @@ This tool utilizes the Google Gemini API to gather information. Crucially, it en
 
 ## Setup
 
+### For Usage
+There are multiple options for installing this tool:
+
+-  Install using `pipx`: `pipx install git+https://github.com/NilsGolembiewski/mass-information-retrieval-tool`
+-  Install using `pip`: `pip install git+https://github.com/NilsGolembiewski/mass-information-retrieval-tool`
+
+If you are planning to only use this tool and not modify it, you can continue at [Configuration](#configuration-configyaml).
+  
+### For Development
+
 1.  **Clone the repository (if you haven't already):**
     ```bash
     git clone <repository-url>
