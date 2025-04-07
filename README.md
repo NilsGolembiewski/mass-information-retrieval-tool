@@ -1,10 +1,14 @@
 # Mass Information Retrieval Tool
 
-A Python tool that retrieves structured information for a list of items from a CSV file using the Google Gemini API based on a YAML configuration file.
+A Python tool that retrieves structured information for a list of items from a CSV file using a multi-step process involving Google Gemini and Google Custom Search, based on a YAML configuration file.
 
-### Information Source (Gemini API with Google Search)
+### Workflow Overview
 
-This tool utilizes the Google Gemini API to gather information. Crucially, it enables the **Google Search tool** within the API call. This allows the Gemini model to potentially perform live web searches via Google Search to supplement its internal knowledge base and provide more current or specific information when answering prompts. The quality and recency of the information depend on both the Gemini model's capabilities and the search results it accesses.
+1.  **Query Generation:** For each item in the input CSV and each field defined in the target schema, the tool asks Google Gemini to generate an optimal Google search query.
+2.  **Search Execution:** The generated queries are executed using the Google Custom Search API.
+3.  **Result Processing:** The aggregated search results are then fed back into Google Gemini, along with the original item details and the target schema, to generate the final structured JSON output.
+
+This multi-step approach aims to leverage Gemini's query generation capabilities and Google Search's real-time information access, followed by Gemini's ability to synthesize and structure the gathered data.
 
 ## Prerequisites
 
@@ -34,12 +38,15 @@ If you are planning to only use this tool and not modify it, you can continue at
     poetry install
     ```
 
-3.  **Set up Google Gemini API Key:**
+3.  **Set up API Keys:**
     *   Create a file named `.env` in the project root directory (`/home/nils/Projects/mass-information-retrieval-tool/.env`).
-    *   Add your Google Gemini API key to the `.env` file. The key name should match the `api_key_env_var` specified in your `config.yaml` (default is `GOOGLE_API_KEY`):
+    *   Add your **Google Gemini API key** and your **Google Custom Search API key** and **Custom Search Engine (CSE) ID** to the `.env` file. The key names should match those specified in your `config.yaml` (see defaults below):
         ```dotenv
-        GOOGLE_API_KEY=YOUR_ACTUAL_GEMINI_API_KEY
+        GEMINI_API_KEY=YOUR_ACTUAL_GEMINI_API_KEY
+        GOOGLE_CSE_API_KEY=YOUR_ACTUAL_GOOGLE_CSE_API_KEY
+        GOOGLE_CSE_ID=YOUR_ACTUAL_GOOGLE_CSE_ID
         ```
+    *   You can obtain a Google Custom Search API key and create a CSE ID via the [Google Cloud Console](https://console.cloud.google.com/) and the [Programmable Search Engine control panel](https://programmablesearchengine.google.com/).
     *   Ensure `.env` is listed in your `.gitignore` file to prevent committing secrets.
 
 ## Configuration (`config.yaml`)
@@ -50,13 +57,21 @@ The tool's behavior is controlled by a `config.yaml` file (default location is t
 *   `output_csv`: (Required) Path where the enriched output CSV file will be saved. The directory will be created if it doesn't exist.
 *   `key_columns`: (Required) A list of column names in the `input_csv` that together identify the items (e.g., `["Company Name", "Product ID"]`) for which information should be retrieved.
 *   `gemini_model`: (Required) The specific Google Gemini model to use (e.g., `gemini-1.5-flash`).
-*   `api_key_env_var`: (Required) The name of the environment variable that holds your Google Gemini API key (defined in your `.env` file).
+*   `api_key_env_var`: (Required) The name of the environment variable holding your Google Gemini API key.
+*   `google_search_api_key_env_var`: (Required) The name of the environment variable holding your Google Custom Search API key.
+*   `google_cse_id_env_var`: (Required) The name of the environment variable holding your Google Custom Search Engine ID.
+*   `google_search_num_results`: (Optional) The number of search results to fetch for each generated query (default: 2).
 *   `schema`: (Required) A dictionary defining the desired output structure.
     *   Keys: The names of the new columns to be added to the output CSV.
-    *   Values: The expected data type for each column (`str`, `int`, `float`, `bool`). The tool will attempt to convert the data received from Gemini to these types.
-*   `prompt_template`: (Required) A template string for the prompt sent to Gemini.
+    *   Values: The expected data type for each column (`str`, `int`, `float`, `bool`). The tool will attempt to convert the final data received from Gemini to these types.
+*   `query_generation_prompt_template`: (Required) A template string for the prompt sent to Gemini to generate a search query for a *single field*.
     *   Use `{key_values_json}` as a placeholder for a JSON object containing the key-value pairs from the `key_columns` for the current row.
-    *   Use `{schema_json}` as a placeholder for a JSON representation of the desired output structure (generated automatically based on the `schema`).
+    *   Use `{field_name}` as a placeholder for the specific schema field the query is being generated for.
+*   `final_processing_prompt_template`: (Required) A template string for the prompt sent to Gemini to process the aggregated search results.
+    *   Use `{key_values_json}` as a placeholder for the original key-value pairs.
+    *   Use `{schema_json}` as a placeholder for a JSON representation of the desired output structure.
+    *   Use `{search_results_aggregate}` as a placeholder for the combined text of all search results gathered for the row.
+*   `prompt_template`: (Optional, Legacy) The original prompt template used in the previous single-step workflow. Kept for reference but not used by the current multi-step process.
 
 **Example `config.yaml`:**
 
@@ -73,43 +88,60 @@ output_csv: "data/companies_enriched.csv" # IMPORTANT: Update this path
 key_columns: ["Company Name"] # IMPORTANT: Update this list
 
 # Google Gemini API configuration
-gemini_model: "gemini-1.5-flash"
-api_key_env_var: "GOOGLE_API_KEY"
+gemini_model: "gemini-2.0-flash" # Or another suitable model
+api_key_env_var: "GEMINI_API_KEY"
+
+# Parallel processing configuration
+max_parallel_requests: 5 # Adjust as needed
+
+# Google Custom Search API configuration
+google_search_api_key_env_var: "GOOGLE_CSE_API_KEY"
+google_cse_id_env_var: "GOOGLE_CSE_ID"
+google_search_num_results: 2
 
 # Schema definition for the information to retrieve
 schema:
   approx_employees: "int"
   industry: "str"
   headquarters_location: "str"
-  founded_year: "int"
+  founded_year: int
+  website: str
 
-# Prompt template for querying Gemini
-prompt_template: |
-  For the entity described by the following key information:
+# Prompt template for generating a Google Search query for a specific field
+query_generation_prompt_template: |
+  Based on the following item details:
   {key_values_json}
 
-  Find the following details and provide them strictly as a JSON object matching this structure:
-  {schema_json}
+  Generate the single best Google search query string to find the value for the field '{field_name}'.
+  Output ONLY the raw query string, without any explanation or formatting.
 
-  If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
+# Prompt template for processing aggregated search results into the final JSON
+final_processing_prompt_template: |
+  Context:
+  - Original item details: {key_values_json}
+  - Target JSON schema structure: {schema_json}
+  - Collected Google Search results for various fields:
+  {search_results_aggregate}
+
+  Task:
+  Analyze the provided context and search results. Generate a single JSON object that strictly adheres to the target schema structure. Populate the JSON object fields using the most relevant information found in the search results.
+  - If a value for a field can be accurately determined from the search results, include it.
+  - If a value cannot be determined or is ambiguous, use `null` for that field.
+  - Ensure the output is only the valid JSON object, enclosed in ```json ... ``` if necessary, but preferably just the raw JSON.
 ```
 
 ## Usage
 
-After installing dependencies with `poetry install`, you can run the tool using the script entry point:
+Ensure your API keys are set in the `.env` file (see [Setup](#setup)).
+
+Run the tool using the script entry point provided by Poetry, loading the environment variables from `.env` using `dotenv run --`:
 
 ```bash
-poetry run mass-retrieve-info --config config.yaml
+dotenv run -- poetry run mass-retrieve-info --config config.yaml
 ```
 
-Alternatively, you can run it directly as a module:
-
-```bash
-poetry run python -m mass_information_retrieval_tool.main --config config.yaml
-```
-
-*   Replace `config.yaml` with the actual path to your configuration file if it's different or located elsewhere (the default is `config.yaml` in the current directory).
-*   The script will read the input CSV, query Gemini for each item identified by the combination of values in the specified `key_columns`, attempt to parse and validate the results according to the `schema`, and save the enriched data to the `output_csv`.
+*   Replace `config.yaml` with the actual path to your configuration file if it's different or located elsewhere.
+*   The script will execute the multi-step workflow: generate queries, perform searches, process results, and save the enriched data to the `output_csv`.
 *   Progress and any errors will be logged to the console.
 
 ## Example Usage (Using `example_data`)
@@ -122,23 +154,27 @@ This repository includes an `example_data` directory containing sample files to 
     # --- Configuration for Mass Information Retrieval Tool ---
 
     # Input CSV file path
-    input_csv: "example_data/input.csv" # IMPORTANT: Update this path to your actual input file
+    input_csv: "example_data/input.csv"
 
-# Output CSV file path (will be created)
-output_csv: "example_data/output.csv" # IMPORTANT: Update this path if needed
+    # Output CSV file path (will be created)
+    output_csv: "example_data/output.csv"
 
-# List of column names in the input CSV containing the key information
-key_columns: ["CompanyName"] # IMPORTANT: Update this list with your actual column names
+    # List of column names in the input CSV containing the key information
+    key_columns: ["CompanyName"]
 
-# Google Gemini API configuration
-gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
-    api_key_env_var: "GEMINI_API_KEY" # Name of the environment variable holding the API key
+    # Google Gemini API configuration
+    gemini_model: "gemini-2.0-flash"
+    api_key_env_var: "GEMINI_API_KEY"
 
     # Parallel processing configuration
-    max_parallel_requests: 5 # Maximum number of concurrent API requests (adjust as needed)
+    max_parallel_requests: 5
+
+    # Google Custom Search API configuration
+    google_search_api_key_env_var: "GOOGLE_CSE_API_KEY"
+    google_cse_id_env_var: "GOOGLE_CSE_ID"
+    google_search_num_results: 2
 
     # Schema definition for the information to retrieve
-    # Keys are the desired output column names, values are the expected data types (str, int, float, bool)
     schema:
       number_of_employees: int
       annual_revenue: float
@@ -146,19 +182,28 @@ gemini_model: "gemini-2.5-pro-preview-03-25" # Using 2.5 Pro Preview model
       year_founded: int
       industry: str
       website: str
-      # Add more fields as needed
 
-# Prompt template for querying Gemini
-# Use {key_values_json} as a placeholder for the JSON object containing the key-value pairs from the key_columns
-# Use {schema_json} as a placeholder for the desired JSON output structure
-prompt_template: |
-  For the entity described by the following key information:
-  {key_values_json}
+    # Prompt template for generating a Google Search query for a specific field
+    query_generation_prompt_template: |
+      Based on the following item details:
+      {key_values_json}
 
-  Find the following details and provide them strictly as a JSON object matching this structure:
-  {schema_json}
+      Generate the single best Google search query string to find the value for the field '{field_name}'.
+      Output ONLY the raw query string, without any explanation or formatting.
 
-  If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
+    # Prompt template for processing aggregated search results into the final JSON
+    final_processing_prompt_template: |
+      Context:
+      - Original item details: {key_values_json}
+      - Target JSON schema structure: {schema_json}
+      - Collected Google Search results for various fields:
+      {search_results_aggregate}
+
+      Task:
+      Analyze the provided context and search results. Generate a single JSON object that strictly adheres to the target schema structure. Populate the JSON object fields using the most relevant information found in the search results.
+      - If a value for a field can be accurately determined from the search results, include it.
+      - If a value cannot be determined or is ambiguous, use `null` for that field.
+      - Ensure the output is only the valid JSON object, enclosed in ```json ... ``` if necessary, but preferably just the raw JSON.
     ```
 
 2.  **Input Data (`example_data/input.csv`):**
@@ -174,14 +219,14 @@ prompt_template: |
     ```
 
 3.  **Run the Example:**
-    Execute the tool using the example configuration (using the script entry point):
+    Execute the tool using the example configuration:
     ```bash
-    poetry run mass-retrieve-info --config example_data/config.yaml
+    dotenv run -- poetry run mass-retrieve-info --config example_data/config.yaml
     ```
-    *(Ensure your `GEMINI_API_KEY` is set in the `.env` file as described in the Setup section).*
+    *(Ensure your `GEMINI_API_KEY`, `GOOGLE_CSE_API_KEY`, and `GOOGLE_CSE_ID` are set in the `.env` file as described in the Setup section).*
 
 4.  **Output Data (`example_data/output.csv`):**
-    After running, the `output.csv` file will be created (or overwritten) with the original data plus the information retrieved based on the schema:
+    After running, the `output.csv` file will be created (or overwritten) with the original data plus the information retrieved and processed through the multi-step workflow:
     ```csv
     CompanyName,Region,ContactPerson,number_of_employees,annual_revenue,headquarters_location,year_founded,industry,website
     Apple Inc.,North America,,164000,391035000000.0,"Cupertino, California, United States",1976,Consumer Electronics,https://www.apple.com/

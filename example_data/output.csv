@@ -1,7 +1,7 @@
 CompanyName,Region,ContactPerson,number_of_employees,annual_revenue,headquarters_location,year_founded,industry,website
-Apple Inc.,North America,,164000,391035000000.0,"Cupertino, California, United States",1976,"Consumer electronics, Software services, Online services",https://www.apple.com/
-Microsoft Corporation,North America,,228000,245122000000.0,"Redmond, Washington, USA",1975,Technology,https://www.microsoft.com
-Alphabet Inc.,North America,,183323,350018000000.0,"Mountain View, California, United States",2015,Conglomerate,https://abc.xyz
-"Amazon.com, Inc.",North America,,1556000,637959000000.0,"Seattle, Washington and Arlington, Virginia, U.S.",1994,Conglomerate,amazon.com
-"Meta Platforms, Inc.",North America,,74067,164501000000.0,"Menlo Park, California",2004,Social media / Social network advertising / Consumer electronics / Virtual reality,https://meta.com
-"Cisco Systems, Inc.",North America,,90400,53800000000.0,"San Jose, California",1984,Networking hardware,cisco.com
+Apple Inc.,North America,,164000,391035000000.0,"Cupertino, California",1976,Technology,apple.com
+Microsoft Corporation,North America,,228000,245000000000.0,"Redmond, Washington",1975,Information technology,microsoft.com
+Alphabet Inc.,North America,,183323,297132000000.0,"Mountain View, California",2015,Technology,
+"Amazon.com, Inc.",North America,,1556000,,"Seattle, Washington",1994,"e-commerce, cloud computing, online advertising",www.amazon.com
+"Meta Platforms, Inc.",North America,,74067,164501000000.0,"Menlo Park, California",2004,Social media,meta.com
+"Cisco Systems, Inc.",North America,,90400,27400000000.0,"San Jose, CA",1984,Networking hardware,cisco.com
