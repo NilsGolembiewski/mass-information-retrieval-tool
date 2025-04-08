@@ -4,11 +4,14 @@ import sys
 from mass_information_retrieval_tool.core import (
     load_config,
     configure_gemini,
-    process_csv
+    process_csv,
 )
 
 # Configure logging (can be configured here or rely on core.py's config)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def main():
     """Main entry point for the script."""
@@ -19,7 +22,7 @@ def main():
         "--config",
         type=str,
         default="config.yaml",
-        help="Path to the configuration YAML file (default: config.yaml)"
+        help="Path to the configuration YAML file (default: config.yaml)",
     )
     args = parser.parse_args()
 
@@ -28,7 +31,7 @@ def main():
         config = load_config(args.config)
 
         # 2. Configure Gemini Client
-        configure_gemini(config['api_key_env_var'])
+        configure_gemini(config["api_key_env_var"])
 
         # 3. Process the CSV
         process_csv(config)
@@ -44,8 +47,11 @@ def main():
         raise
     except Exception as e:
         # Catch any other unexpected errors during processing
-        logging.error(f"An unexpected error occurred: {e}", exc_info=True) # Include traceback
+        logging.error(
+            f"An unexpected error occurred: {e}", exc_info=True
+        )  # Include traceback
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
