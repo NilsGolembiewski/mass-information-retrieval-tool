@@ -5,13 +5,15 @@ import logging
 import pandas as pd
 from google import genai  # Correct import for google-genai package
 
-# from google.genai.types import GenerationConfig # No longer explicitly needed for basic calls
-from googleapiclient.discovery import (
-    build as build_google_service,
-)  # Renamed to avoid conflict
-from googleapiclient.errors import HttpError
+# from google.genai.types import GenerationConfig # No longer explicitly needed
+# Removed googleapiclient imports
 from dotenv import load_dotenv
-from typing import Dict, Any, Optional, Tuple  # Added List
+from typing import (
+    Dict,
+    Any,
+    Optional,
+    Tuple,
+)  # Removed List import as it's not used directly
 from joblib import Parallel, delayed  # Import joblib
 
 # Configure logging
@@ -43,7 +45,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     # --- Configuration Validation ---
     logging.info("Validating configuration...")
-    # Define required keys for the new workflow
+    # Define required keys for the field-by-field workflow
     required_keys = [
         "input_csv",
         "output_csv",
@@ -51,11 +53,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
         "gemini_model",
         "api_key_env_var",
         "schema",
-        "query_generation_prompt_template",
-        "final_processing_prompt_template",
-        "google_search_api_key_env_var",
-        "google_cse_id_env_var",
+        "single_field_prompt_template",  # Added new required prompt
     ]
+    # Removed keys related to external Google Search and previous multi-step prompts
     missing_keys = [key for key in required_keys if key not in config]
     if missing_keys:
         raise ValueError(
@@ -97,16 +97,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
         raise ValueError(
             "Configuration 'google_search_num_results' must be a positive integer."
         )
+    # Remove validation for google_search_num_results as it's no longer used
 
-    # Validate prompt templates are strings
-    if not isinstance(config["query_generation_prompt_template"], str):
+    # Validate the new single_field_prompt_template
+    if not isinstance(config["single_field_prompt_template"], str):
         raise ValueError(
-            "Configuration 'query_generation_prompt_template' must be a string."
+            "Configuration 'single_field_prompt_template' must be a string."
         )
-    if not isinstance(config["final_processing_prompt_template"], str):
-        raise ValueError(
-            "Configuration 'final_processing_prompt_template' must be a string."
-        )
+    # Remove validation for old/removed prompt templates
 
     logging.info("Configuration loaded and validated successfully.")
     return config
@@ -130,33 +128,7 @@ def configure_gemini(api_key_env_var: str) -> genai.Client:  # Add return type h
     return client  # Return the client
 
 
-# --- New Function: Configure Google Custom Search ---
-def configure_google_search(api_key_env_var: str, cse_id_env_var: str) -> Optional[Any]:
-    """Loads API key and CSE ID and configures the Google Custom Search service."""
-    load_dotenv()  # Ensure .env is loaded
-    api_key = os.getenv(api_key_env_var)
-    cse_id = os.getenv(cse_id_env_var)
-
-    if not api_key:
-        logging.error(
-            f"Google Search API key environment variable '{api_key_env_var}' not found."
-        )
-        return None  # Indicate failure
-    if not cse_id:
-        logging.error(
-            f"Google Search CSE ID environment variable '{cse_id_env_var}' not found."
-        )
-        return None  # Indicate failure
-
-    try:
-        service = build_google_service("customsearch", "v1", developerKey=api_key)
-        logging.info("Google Custom Search service configured.")
-        return service
-    except Exception as e:
-        logging.error(
-            f"Failed to build Google Custom Search service: {e}", exc_info=True
-        )
-        return None
+# Removed configure_google_search function
 
 
 def generate_schema_json(schema: Dict[str, str]) -> str:
@@ -174,140 +146,77 @@ def generate_schema_json(schema: Dict[str, str]) -> str:
     return json.dumps(schema_example, indent=2)
 
 
-# --- New Function: Call Gemini for Query Generation ---
-def call_gemini_for_query(
+# Removed functions:
+# - call_gemini_for_query
+# - execute_google_search
+# - execute_all_google_searches
+# - generate_search_queries_for_row
+# - call_gemini_for_processing
+
+
+# --- New Function: Call Gemini for a Single Field ---
+def call_gemini_for_field(
     client: genai.Client, model_name: str, prompt: str
-) -> Optional[str]:
-    """Calls the Gemini API to generate a search query string (no tools enabled)."""
+) -> Optional[Any]:
+    """
+    Calls the Gemini API for a single field, enabling the Google Search tool,
+    and expects a JSON response like {"value": ...}.
+    Returns the extracted value.
+    """
+    # Define the search tool correctly using imported classes
+    # search_tool = Tool(google_search=GoogleSearch())
+    search_tool = {"google_search": {}}  # Correctly instantiate the search tool
     try:
         response = client.models.generate_content(
             model=model_name,
             contents=[prompt],
-            # No 'config' or 'tools' needed here
+            config={
+                "tools": [search_tool]
+            },  # Pass the correctly constructed tool object
         )
-        query = response.text.strip()
-        logging.debug(f"Generated query: {query}")
-        return query
-    except Exception:
-        logging.exception(
-            f"Gemini API call for query generation failed (prompt: {prompt[:100]}...):"
-        )
-        return None
 
-
-# --- New Function: Execute Google Search ---
-def execute_google_search(
-    service: Any, cse_id: str, query: str, num_results: int
-) -> Optional[str]:
-    """Executes a single Google Custom Search query and returns concatenated snippets."""
-    if not service:
-        logging.error("Google Search service not configured, skipping search.")
-        return None
-    if not query:
-        logging.warning("Empty query provided, skipping search.")
-        return None
-
-    try:
-        logging.debug(f"Executing Google Search for query: {query}")
-        results = service.cse().list(q=query, cx=cse_id, num=num_results).execute()
-
-        items = results.get("items", [])
-        if not items:
-            logging.debug(f"No Google Search results found for query: {query}")
-            return None  # Or return an empty string "" if preferred
-
-        # Concatenate snippets or titles/links if snippets are missing
-        snippets = [item.get("snippet", item.get("title", "")) for item in items]
-        result_text = "\n---\n".join(snippets).strip()
-        logging.debug(f"Search results text (first 100 chars): {result_text[:100]}...")
-        return result_text
-
-    except HttpError as e:
-        logging.error(
-            f"Google Search API HTTP error for query '{query}': {e}", exc_info=True
-        )
-        return None
-    except Exception as e:
-        logging.error(
-            f"Unexpected error during Google Search for query '{query}': {e}",
-            exc_info=True,
-        )
-        return None
-
-
-# --- New Function: Execute All Google Searches for a Row ---
-def execute_all_google_searches(
-    queries: Dict[str, Optional[str]],
-    search_service: Any,
-    cse_id: str,
-    num_results: int,
-) -> Dict[str, Optional[str]]:
-    """Executes searches for all generated queries for a row."""
-    search_results = {}
-    for field_name, query in queries.items():
-        if query:  # Only search if a query was successfully generated
-            result_text = execute_google_search(
-                search_service, cse_id, query, num_results
+        # --- Log Token Usage ---
+        try:
+            usage = response.usage_metadata
+            logging.info(
+                f"Gemini Token Usage - Prompt: {usage.prompt_token_count}, Candidates: {usage.candidates_token_count}, Total: {usage.total_token_count}"
             )
-            search_results[field_name] = result_text
-        else:
-            search_results[field_name] = None  # Mark as None if query generation failed
-            logging.warning(
-                f"Skipping search for field '{field_name}' due to missing query."
-            )
-    return search_results
+        except Exception as e:
+            logging.warning(f"Could not retrieve token usage metadata: {e}")
+        # --- End Log Token Usage ---
 
-
-# --- New Function: Generate Search Queries for a Row ---
-def generate_search_queries_for_row(
-    client: genai.Client,
-    model_name: str,
-    key_values: Dict[str, Any],
-    schema: Dict[str, str],
-    query_template: str,
-) -> Dict[str, Optional[str]]:
-    """Generates a search query for each field in the schema using Gemini."""
-    queries = {}
-    key_values_json_str = json.dumps(key_values)
-    logging.debug(f"Generating search queries for key values: {key_values_json_str}")
-
-    for field_name in schema.keys():
-        prompt = query_template.format(
-            key_values_json=key_values_json_str, field_name=field_name
-        )
-        query = call_gemini_for_query(client, model_name, prompt)
-        queries[field_name] = query  # Store query (or None if generation failed)
-
-    return queries
-
-
-# --- New Function: Call Gemini for Final Processing ---
-def call_gemini_for_processing(
-    client: genai.Client, model_name: str, prompt: str
-) -> Optional[Dict[str, Any]]:
-    """Calls Gemini API to process aggregated results into final JSON (no tools)."""
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=[prompt],
-            # No 'config' or 'tools' needed here
-        )
         # Extract JSON text - handle potential variations in response structure
         json_text = response.text.strip()
-        logging.debug(f"Raw JSON response from final processing: {json_text[:500]}...")
-        if json_text.startswith("```json"):
-            json_text = json_text[7:]
-        if json_text.endswith("```"):
-            json_text = json_text[:-3]
+        logging.debug(f"Raw JSON response for field: {json_text[:500]}...")
 
-        return json.loads(json_text)
+        # Look for a ```json block in the response
+        if "```json" in json_text:
+            start_index = json_text.find("```json") + 7
+            end_index = json_text.rfind("```")
+            if end_index > start_index:
+                json_text = json_text[start_index:end_index].strip()
+            else:
+                logging.warning(
+                    "Closing ``` not found or invalid for JSON block. Using raw response."
+                )
+        else:
+            logging.warning("No ```json block found. Using raw response.")
+
+        # Parse the JSON and extract the 'value'
+        parsed_json = json.loads(json_text)
+        if isinstance(parsed_json, dict) and "value" in parsed_json:
+            return parsed_json["value"]
+        else:
+            logging.warning(f"Unexpected JSON structure received: {json_text}")
+            return None
+
     except json.JSONDecodeError as e:
         logging.warning(
-            f"Failed to decode final JSON response: {e}\nResponse text: {response.text[:500]}..."
+            f"Failed to decode JSON response for field: {e}\nResponse text: {response.text[:500]}..."
         )
         return None
     except Exception:
-        logging.exception("Gemini API call for final processing failed:")
+        logging.exception("Gemini API call for field failed:")
         return None
 
 
@@ -348,97 +257,63 @@ def validate_and_convert(data: Any, target_type_str: str) -> Any:
         return None  # Return None on conversion failure
 
 
-# --- Refactored Helper function for parallel processing ---
-def process_row_multi_step(
+# --- New Helper function for parallel processing (Field-by-Field) ---
+def process_row_field_by_field(
     index: int,
     key_values: Dict[str, Any],
     gemini_client: genai.Client,
-    # Removed search_service parameter
-    config: Dict[str, Any],  # Pass the whole config for convenience
+    config: Dict[str, Any],
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
     """
-    Processes a single row using the multi-step workflow.
-    Initializes its own Google Search service client for thread safety.
+    Processes a single row by querying Gemini for each field individually,
+    with Gemini's search tool enabled.
     """
     key_values_json_str = json.dumps(key_values)
     logging.info(
         f"--- Processing row {index + 1}: Key Values = {key_values_json_str} ---"
     )
 
-    # --- Step 0: Configure Google Search Service (Thread-Local) ---
-    # Each thread configures its own service instance
-    search_service = configure_google_search(
-        config["google_search_api_key_env_var"], config["google_cse_id_env_var"]
-    )
-    if not search_service:
-        logging.error(
-            f"Row {index + 1}: Failed to configure Google Search service in thread. Skipping searches."
+    processed_row_data = {}
+    schema = config["schema"]
+    model_name = config["gemini_model"]
+    prompt_template = config["single_field_prompt_template"]
+
+    # Iterate through each field defined in the schema
+    for field_name, field_type in schema.items():
+        logging.debug(f"Row {index + 1}: Querying for field '{field_name}'...")
+
+        # Format the prompt for the current field
+        prompt = prompt_template.format(
+            key_values_json=key_values_json_str,
+            field_name=field_name,
+            field_type=field_type,  # Pass type info to prompt if needed
         )
-        # Decide how to handle this - maybe return None early?
-        # For now, proceed, but searches will fail/be skipped in execute_all_google_searches
 
-    # --- Step 1: Generate Search Queries ---
-    queries = generate_search_queries_for_row(
-        gemini_client,
-        config["gemini_model"],
-        key_values,
-        config["schema"],
-        config["query_generation_prompt_template"],
-    )
-    logging.debug(f"Row {index + 1}: Generated queries: {queries}")
+        # Call Gemini API for this specific field (with search enabled)
+        retrieved_value = call_gemini_for_field(gemini_client, model_name, prompt)
 
-    # --- Step 2: Execute Google Searches ---
-    search_results = execute_all_google_searches(
-        queries,
-        search_service,
-        os.getenv(config["google_cse_id_env_var"]),  # Get CSE ID from env
-        config["google_search_num_results"],
-    )
-    logging.debug(f"Row {index + 1}: Search results obtained.")
-
-    # --- Step 3: Aggregate Search Results for Final Prompt ---
-    aggregate_results_text = ""
-    for field_name, result_text in search_results.items():
-        query = queries.get(field_name, "N/A")  # Get the query used
-        if result_text:
-            aggregate_results_text += (
-                f"Results for '{field_name}' (query: '{query}'):\n{result_text}\n\n"
+        # Validate and store the result for this field
+        if retrieved_value is not None:
+            validated_value = validate_and_convert(retrieved_value, field_type)
+            processed_row_data[field_name] = validated_value
+            logging.debug(
+                f"Row {index + 1}: Field '{field_name}' value: {validated_value}"
             )
         else:
-            aggregate_results_text += (
-                f"No results found for '{field_name}' (query: '{query}').\n\n"
+            processed_row_data[field_name] = (
+                None  # Store None if retrieval/parsing failed
             )
-    aggregate_results_text = aggregate_results_text.strip()
+            logging.warning(
+                f"Row {index + 1}: Failed to retrieve or parse value for field '{field_name}'."
+            )
 
-    # --- Step 4: Call Gemini for Final Processing ---
-    schema_json_str = generate_schema_json(config["schema"])
-    final_prompt = config["final_processing_prompt_template"].format(
-        key_values_json=key_values_json_str,
-        schema_json=schema_json_str,
-        search_results_aggregate=aggregate_results_text,
-    )
-
-    final_data = call_gemini_for_processing(
-        gemini_client, config["gemini_model"], final_prompt
-    )
-
-    # --- Step 5: Validate and Return ---
-    processed_row_data = {}
-    if final_data and isinstance(final_data, dict):
-        logging.debug(f"Row {index + 1}: Raw final data received: {final_data}")
-        for col_name, type_str in config["schema"].items():
-            value = final_data.get(col_name)
-            validated_value = validate_and_convert(value, type_str)
-            processed_row_data[col_name] = validated_value
-        logging.info(f"Row {index + 1}: Successfully processed.")
-        return index, processed_row_data
-    else:
-        logging.warning(f"Row {index + 1}: Failed to retrieve or process final data.")
-        return index, None
+    # Return the aggregated data for the row
+    logging.info(f"Row {index + 1}: Finished processing all fields.")
+    return index, processed_row_data
 
 
 def process_csv(config: Dict[str, Any]) -> None:
-    """Main function to process the CSV file using the multi-step parallel workflow."""
+    """Main function to process the CSV file using the field-by-field parallel workflow."""
     # 1. Configure Gemini Client
     try:
         gemini_client = configure_gemini(config["api_key_env_var"])
@@ -446,7 +321,7 @@ def process_csv(config: Dict[str, Any]) -> None:
         logging.error(f"Failed to configure Gemini: {e}")
         return
 
-    # 2. Load paths and settings from config (Search service configured per thread now)
+    # 2. Load paths and settings from config (No separate search service config needed)
     input_path = config["input_csv"]
     output_path = config["output_csv"]
     key_columns = config["key_columns"]
@@ -504,12 +379,11 @@ def process_csv(config: Dict[str, Any]) -> None:
         f"Starting parallel processing with {max_parallel_requests} workers..."
     )
     results = Parallel(n_jobs=max_parallel_requests, backend="threading")(
-        delayed(process_row_multi_step)(
+        delayed(process_row_field_by_field)(  # Call the new processing function
             index,
             key_vals,
             gemini_client,
-            # Removed search_service from arguments passed to delayed function
-            config,  # Pass the whole config dictionary
+            config,
         )
         for index, key_vals in job_inputs
         if key_vals is not None  # Skip rows marked for skipping

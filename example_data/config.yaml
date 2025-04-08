@@ -17,11 +17,6 @@ api_key_env_var: "GEMINI_API_KEY" # Name of the environment variable holding the
 # Parallel processing configuration
 max_parallel_requests: 5 # Maximum number of concurrent API requests (adjust as needed)
 
-# Google Custom Search API configuration
-google_search_api_key_env_var: "GOOGLE_CSE_API_KEY" # Name of the environment variable holding the Custom Search API key
-google_cse_id_env_var: "GOOGLE_CSE_ID"         # Name of the environment variable holding the Custom Search Engine ID
-google_search_num_results: 5                   # Number of search results to fetch per query (default: 2)
-
 # Schema definition for the information to retrieve
 # Keys are the desired output column names, values are the expected data types (str, int, float, bool)
 schema:
@@ -35,42 +30,26 @@ schema:
 
 # Prompt template for querying Gemini
 # Use {key_values_json} as a placeholder for the JSON object containing the key-value pairs from the key_columns
-# Use {schema_json} as a placeholder for the desired JSON output structure
-# NOTE: This prompt_template is no longer used in the new workflow, but kept for reference or potential fallback.
-prompt_template: |
-  For the entity described by the following key information:
-  {key_values_json}
-
-  Find the following details and provide them strictly as a JSON object matching this structure:
-  {schema_json}
-
-  If you cannot find a specific piece of information, use a JSON null value for that key. Do not add any explanatory text outside the JSON object.
-
-# --- New Prompt Templates for Multi-Step Workflow ---
-
-# Prompt template for generating a Google Search query for a specific field
+# Prompt template for querying Gemini for a single field value
 # Use {key_values_json} for the input item's key data (JSON string)
 # Use {field_name} for the target field name
-query_generation_prompt_template: |
-  Based on the following item details:
-  {key_values_json}
-
-  Generate the single best Google search query string to find the value for the field '{field_name}'.
-  Output ONLY the raw query string, without any explanation or formatting.
-
-# Prompt template for processing aggregated search results into the final JSON
-# Use {key_values_json} for the input item's key data (JSON string)
-# Use {schema_json} for the target JSON structure example
-# Use {search_results_aggregate} for the combined text of search results
-final_processing_prompt_template: |
+# Use {field_type} for the expected data type/format
+single_field_prompt_template: |
   Context:
-  - Original item details: {key_values_json}
-  - Target JSON schema structure: {schema_json}
-  - Collected Google Search results for various fields:
-  {search_results_aggregate}
+  - Item details: {key_values_json}
+  - Target field: '{field_name}'
+  - Expected type/format: '{field_type}' # e.g., int, str, bool, or specific categories
 
   Task:
-  Analyze the provided context and search results. Generate a single JSON object that strictly adheres to the target schema structure. Populate the JSON object fields using the most relevant information found in the search results.
-  - If a value for a field can be accurately determined from the search results, include it.
-  - If a value cannot be determined or is ambiguous, use `null` for that field.
-  - Ensure the output is only the valid JSON object, enclosed in ```json ... ``` if necessary, but preferably just the raw JSON.
+  Find the value for the single field '{field_name}' for the described item. Use the Google Search tool if necessary to find the most accurate and up-to-date information.
+
+  Constraints for specific fields:
+  # Add specific constraints here if needed, e.g.:
+  # - If '{field_name}' is 'aantal_werknemers', the value must be one of these categories: "0-100", "101-499", or "500+".
+
+  Output Format:
+  Return a single JSON object with one key: "value". The value associated with this key should be the found information for '{field_name}', matching the expected type/format.
+  Example for 'year_founded': {{"value": 1984}}
+  Example for 'headquarters_location': {{"value": "San Jose, CA"}}
+  If the value cannot be determined, return: {{"value": null}}
+  Ensure the output is ONLY the valid JSON object.
