@@ -244,8 +244,8 @@ def validate_and_convert(data: Any, target_type_str: str) -> Any:
                     # Attempt numeric conversion for bool (0=False, non-zero=True)
                     try:
                         return bool(int(data))
-                    except ValueError:
-                        raise ValueError(f"Cannot convert string '{data}' to boolean")
+                    except ValueError as e:
+                        raise ValueError(f"Cannot convert string '{data}' to boolean") from e
             else:
                 return bool(data)  # Standard Python bool conversion
         else:
