@@ -4,6 +4,10 @@ import json
 import logging
 import pandas as pd
 from google import genai  # Correct import for google-genai package
+import html
+from bs4 import BeautifulSoup
+import csv
+import io
 
 # from google.genai.types import GenerationConfig # No longer explicitly needed
 # Removed googleapiclient imports
@@ -28,6 +32,17 @@ TYPE_MAPPING = {
     "float": float,
     "bool": bool,
 }
+
+def csv_join(row: list[str]) -> str:
+    """
+    Joins a list of strings into a single string, escaping commas and quotes.
+    """
+    # Escape commas and quotes in each field
+    result = io.StringIO()
+
+    writer = csv.writer(result, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(row)
+    return result.getvalue().strip()
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -154,17 +169,58 @@ def generate_schema_json(schema: Dict[str, str]) -> str:
 # - call_gemini_for_processing
 
 
+def extract_sources_from_candidate(candidate):
+    """
+    Extracts source URLs from a Gemini candidate's grounding_metadata using BeautifulSoup.
+    Returns a list of URLs (may be empty).
+    """
+    urls = []
+    grounding_metadata = getattr(candidate, 'grounding_metadata', None)
+    if not grounding_metadata:
+        return urls
+
+    # 1. Extract from rendered_content (HTML)
+    search_entry_point = getattr(grounding_metadata, 'search_entry_point', None)
+    if search_entry_point and hasattr(search_entry_point, 'rendered_content'):
+        html_content = search_entry_point.rendered_content
+        soup = BeautifulSoup(html_content, 'html.parser')
+        for a_tag in soup.find_all('a', href=True):
+            link = a_tag['href']
+            urls.append(link)
+
+    # 2. Extract from grounding_supports
+    grounding_supports = getattr(grounding_metadata, 'grounding_supports', None)
+    if grounding_supports:
+        for support in grounding_supports:
+            # Try both object and dict access
+            uri = None
+            if hasattr(support, 'web') and hasattr(support.web, 'uri'):
+                uri = getattr(support.web, 'uri', None)
+            elif isinstance(support, dict) and 'uri' in support:
+                uri = support['uri']
+            if uri:
+                urls.append(uri)
+
+    # 3. Extract from retrieval_metadata.sources
+    retrieval_metadata = getattr(grounding_metadata, 'retrieval_metadata', None)
+    if retrieval_metadata and hasattr(retrieval_metadata, 'sources'):
+        for source in retrieval_metadata.sources:
+            uri = getattr(source, 'uri', None)
+            if uri:
+                urls.append(uri)
+
+    return urls
+
+
 # --- New Function: Call Gemini for a Single Field ---
 def call_gemini_for_field(
     client: genai.Client, model_name: str, prompt: str
-) -> Optional[Any]:
+) -> Optional[tuple]:
     """
     Calls the Gemini API for a single field, enabling the Google Search tool,
     and expects a JSON response like {"value": ...}.
-    Returns the extracted value.
+    Returns a tuple: (extracted value, source URL(s)).
     """
-    # Define the search tool correctly using imported classes
-    # search_tool = Tool(google_search=GoogleSearch())
     search_tool = {"google_search": {}}  # Correctly instantiate the search tool
     try:
         response = client.models.generate_content(
@@ -172,7 +228,7 @@ def call_gemini_for_field(
             contents=[prompt],
             config={
                 "tools": [search_tool]
-            },  # Pass the correctly constructed tool object
+            },
         )
 
         # --- Log Token Usage ---
@@ -204,20 +260,37 @@ def call_gemini_for_field(
 
         # Parse the JSON and extract the 'value'
         parsed_json = json.loads(json_text)
+        value = None
         if isinstance(parsed_json, dict) and "value" in parsed_json:
-            return parsed_json["value"]
+            value = parsed_json["value"]
         else:
             logging.warning(f"Unexpected JSON structure received: {json_text}")
-            return None
+            value = None
+
+        # --- Extract source(s) using grounding_metadata strategy ---
+        source_urls = None
+        try:
+            candidate = None
+            if hasattr(response, "candidates") and response.candidates:
+                candidate = response.candidates[0]
+            if candidate:
+                urls = extract_sources_from_candidate(candidate)
+                if urls:
+                    source_urls = csv_join(urls)
+        except Exception as e:
+            logging.warning(f"Could not extract citations/source URLs: {e}")
+            source_urls = None
+
+        return value, source_urls
 
     except json.JSONDecodeError as e:
         logging.warning(
             f"Failed to decode JSON response for field: {e}\nResponse text: {response.text[:500]}..."
         )
-        return None
+        return None, None
     except Exception:
         logging.exception("Gemini API call for field failed:")
-        return None
+        return None, None
 
 
 def validate_and_convert(data: Any, target_type_str: str) -> Any:
@@ -267,6 +340,7 @@ def process_row_field_by_field(
     """
     Processes a single row by querying Gemini for each field individually,
     with Gemini's search tool enabled.
+    Now also extracts and stores the source (citation URL) for each field.
     """
     key_values_json_str = json.dumps(key_values)
     logging.info(
@@ -290,7 +364,7 @@ def process_row_field_by_field(
         )
 
         # Call Gemini API for this specific field (with search enabled)
-        retrieved_value = call_gemini_for_field(gemini_client, model_name, prompt)
+        retrieved_value, source_url = call_gemini_for_field(gemini_client, model_name, prompt)
 
         # Validate and store the result for this field
         if retrieved_value is not None:
@@ -306,6 +380,8 @@ def process_row_field_by_field(
             logging.warning(
                 f"Row {index + 1}: Failed to retrieve or parse value for field '{field_name}'."
             )
+        # Store the source URL(s) in a new column
+        processed_row_data[f"{field_name}__source"] = source_url
 
     # Return the aggregated data for the row
     logging.info(f"Row {index + 1}: Finished processing all fields.")
@@ -355,6 +431,10 @@ def process_csv(config: Dict[str, Any]) -> None:
             logging.warning(
                 f"Schema column '{col_name}' already exists in the input CSV. Its values might be overwritten."
             )
+        # Add the source column for each field
+        source_col = f"{col_name}__source"
+        if source_col not in df.columns:
+            df[source_col] = pd.NA
 
     # 7. Prepare Inputs for Parallel Processing
     job_inputs = []
